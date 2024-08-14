@@ -502,7 +502,7 @@ extern std::array<std::pair<u16, char const*>, func_count> const func_list
     { 0x1EA, "getmaxagents" },
     { 0x1EB, "botdebugdrawtrigger" },
     { 0x1EC, "botgetclosestnavigablepoint" },
-    { 0x1ED, "gettnodesintrigger" },
+    { 0x1ED, "getnodesintrigger" },
     { 0x1EE, "nodesvisible" },
     { 0x1EF, "getnodesonpath" },
     { 0x1F0, "getzonecount" },
