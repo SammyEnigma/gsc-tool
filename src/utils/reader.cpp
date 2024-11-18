@@ -17,7 +17,7 @@ reader::reader(std::vector<u8> const& data, bool swap) : data_{ data.data() }, s
 {
 }
 
-reader::reader(u8 const* data, u32 size, bool swap) : data_{ data }, size_{ size }, swap_{ swap }
+reader::reader(u8 const* data, usize size, bool swap) : data_{ data }, size_{ size }, swap_{ swap }
 {
 }
 
@@ -57,7 +57,7 @@ template<> auto reader::read() -> i16
     bytes[0] = (data_ + pos_)[1];
     bytes[1] = (data_ + pos_)[0];
     pos_ += 2;
-    return *reinterpret_cast<i16*>(bytes.data());    
+    return *reinterpret_cast<i16*>(bytes.data());
 }
 
 template<> auto reader::read() -> u16
@@ -76,7 +76,7 @@ template<> auto reader::read() -> u16
     bytes[0] = (data_ + pos_)[1];
     bytes[1] = (data_ + pos_)[0];
     pos_ += 2;
-    return *reinterpret_cast<u16*>(bytes.data());    
+    return *reinterpret_cast<u16*>(bytes.data());
 }
 
 template<> auto reader::read() -> i32
@@ -97,7 +97,7 @@ template<> auto reader::read() -> i32
     bytes[2] = (data_ + pos_)[1];
     bytes[3] = (data_ + pos_)[0];
     pos_ += 4;
-    return *reinterpret_cast<i32*>(bytes.data());    
+    return *reinterpret_cast<i32*>(bytes.data());
 }
 
 template<> auto reader::read() -> u32
@@ -118,7 +118,7 @@ template<> auto reader::read() -> u32
     bytes[2] = (data_ + pos_)[1];
     bytes[3] = (data_ + pos_)[0];
     pos_ += 4;
-    return *reinterpret_cast<u32*>(bytes.data());    
+    return *reinterpret_cast<u32*>(bytes.data());
 }
 
 template<> auto reader::read() -> i64
@@ -143,7 +143,7 @@ template<> auto reader::read() -> i64
     bytes[6] = (data_ + pos_)[1];
     bytes[7] = (data_ + pos_)[0];
     pos_ += 8;
-    return *reinterpret_cast<i64*>(bytes.data());    
+    return *reinterpret_cast<i64*>(bytes.data());
 }
 
 template<> auto reader::read() -> u64
@@ -168,7 +168,7 @@ template<> auto reader::read() -> u64
     bytes[6] = (data_ + pos_)[1];
     bytes[7] = (data_ + pos_)[0];
     pos_ += 8;
-    return *reinterpret_cast<u64*>(bytes.data());    
+    return *reinterpret_cast<u64*>(bytes.data());
 }
 
 template<> auto reader::read() -> f32
@@ -189,7 +189,27 @@ template<> auto reader::read() -> f32
     bytes[2] = (data_ + pos_)[1];
     bytes[3] = (data_ + pos_)[0];
     pos_ += 4;
-    return *reinterpret_cast<f32*>(bytes.data());    
+    return *reinterpret_cast<f32*>(bytes.data());
+}
+
+auto reader::read_i24() -> i32
+{
+    if (pos_ + 3 > size_)
+        throw error("reader: out of bounds");
+
+    if (!swap_)
+    {
+        auto value = *reinterpret_cast<i32 const*>(data_ + pos_) & 0xFFFFFF;
+        pos_ += 3;
+        return value;
+    }
+
+    auto bytes = std::array<u8, 4>{};
+    bytes[0] = (data_ + pos_)[2];
+    bytes[1] = (data_ + pos_)[1];
+    bytes[2] = (data_ + pos_)[0];
+    pos_ += 3;
+    return *reinterpret_cast<i32*>(bytes.data());
 }
 
 auto reader::read_cstr() -> std::string
@@ -199,7 +219,7 @@ auto reader::read_cstr() -> std::string
     return ret;
 }
 
-auto reader::read_bytes(u32 pos, u32 count) -> std::string
+auto reader::read_bytes(usize pos, usize count) -> std::string
 {
     auto data = std::string{};
 
@@ -220,17 +240,17 @@ auto reader::is_avail() const -> bool
     return pos_ < size_;
 }
 
-auto reader::seek(u32 size) -> void
+auto reader::seek(usize size) -> void
 {
     if (pos_ + size <= size_) pos_ += size;
 }
 
-auto reader::seek_neg(u32 size) -> void
+auto reader::seek_neg(usize size) -> void
 {
     if (pos_ >= size) pos_ -= size;
 }
 
-auto reader::align(u32 size) -> u32
+auto reader::align(usize size) -> usize
 {
     auto pos = pos_;
 
@@ -244,17 +264,17 @@ auto reader::data() const -> u8 const*
     return data_;
 }
 
-auto reader::size() const -> u32
+auto reader::size() const -> usize
 {
     return size_;
 }
 
-auto reader::pos() const -> u32
+auto reader::pos() const -> usize
 {
     return pos_;
 }
 
-auto reader::pos(u32 pos) -> void
+auto reader::pos(usize pos) -> void
 {
     if (pos <= size_) pos_ = pos;
 }

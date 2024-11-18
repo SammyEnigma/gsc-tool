@@ -639,7 +639,7 @@ auto compiler::emit_stmt_foreach(stmt_foreach const& stm, scope& scp) -> void
         emit_opcode(opcode::OP_CallBuiltin, { "getfirstarraykey"s, "1"s });
     else
         emit_opcode(opcode::OP_CallBuiltin1, "getfirstarraykey");
-    
+
     emit_expr_variable_ref(*stm.key, scp, true);
 
     if (ctx_->props() & props::foreach && stm.use_key)
@@ -736,7 +736,6 @@ auto compiler::emit_stmt_switch(stmt_switch const& stm, scope& scp) -> void
     auto data = std::vector<std::string>{};
     data.push_back(std::format("{}", stm.body->block->list.size()));
 
-    auto type = switch_type::none;
     auto loc_default = std::string{};
     auto has_default = false;
     scope* default_ctx = nullptr;
@@ -751,39 +750,13 @@ auto compiler::emit_stmt_switch(stmt_switch const& stm, scope& scp) -> void
 
             if (entry->as<stmt_case>().value->is<expr_integer>())
             {
-                if (ctx_->engine() == engine::iw9)
-                {
-                    data.push_back(std::format("{}", static_cast<std::underlying_type_t<switch_type>>(switch_type::integer)));
-                }
-                else
-                {
-                    if (type == switch_type::string)
-                    {
-                        throw comp_error(entry->loc(), "switch cases with different types");
-                    }
-
-                    type = switch_type::integer;
-                }
-                
+                data.push_back(std::format("{}", static_cast<i32>(switch_type::integer)));
                 data.push_back(entry->as<stmt_case>().value->as<expr_integer>().value);
                 data.push_back(insert_label());
             }
             else if (entry->as<stmt_case>().value->is<expr_string>())
             {
-                if (ctx_->engine() == engine::iw9)
-                {
-                    data.push_back(std::format("{}", static_cast<std::underlying_type_t<switch_type>>(switch_type::string)));
-                }
-                else
-                {
-                    if (type == switch_type::integer)
-                    {
-                        throw comp_error(entry->loc(), "switch cases with different types");
-                    }
-
-                    type = switch_type::string;
-                }
-
+                data.push_back(std::format("{}", static_cast<std::underlying_type_t<switch_type>>(switch_type::string)));
                 data.push_back(entry->as<stmt_case>().value->as<expr_string>().value);
                 data.push_back(insert_label());
             }
@@ -834,10 +807,7 @@ auto compiler::emit_stmt_switch(stmt_switch const& stm, scope& scp) -> void
         scp.init(break_blks_);
     }
 
-    data.push_back(std::format("{}", static_cast<std::underlying_type_t<switch_type>>(type)));
-
     insert_label(table_loc);
-
     emit_opcode(opcode::OP_endswitch, data);
 
     auto offset = static_cast<u32>(((ctx_->engine() == engine::iw9) ? 8 : 7) * stm.body->block->list.size());
@@ -862,23 +832,31 @@ auto compiler::emit_stmt_default(stmt_default const& stm, scope&) -> void
 
 auto compiler::emit_stmt_break(stmt_break const& stm, scope& scp) -> void
 {
-    if (!can_break_ || scp.abort != scope::abort_none || scp.loc_break == "")
+    if (!can_break_ /*|| scp.abort != scope::abort_none*/ || scp.loc_break == "")
         throw comp_error(stm.loc(), "illegal break statement");
 
-    break_blks_.push_back(&scp);
-    emit_remove_local_vars(scp);
-    scp.abort = scope::abort_break;
+    if (scp.abort == scope::abort_none)
+    {
+        break_blks_.push_back(&scp);
+        emit_remove_local_vars(scp);
+        scp.abort = scope::abort_break;
+    }
+
     emit_opcode(opcode::OP_jump, scp.loc_break);
 }
 
 auto compiler::emit_stmt_continue(stmt_continue const& stm, scope& scp) -> void
 {
-    if (!can_continue_ || scp.abort != scope::abort_none || scp.loc_cont == "")
+    if (!can_continue_ /*|| scp.abort != scope::abort_none*/ || scp.loc_cont == "")
         throw comp_error(stm.loc(), "illegal continue statement");
 
-    continue_blks_.push_back(&scp);
-    emit_remove_local_vars(scp);
-    scp.abort = scope::abort_continue;
+    if (scp.abort == scope::abort_none)
+    {
+        continue_blks_.push_back(&scp);
+        emit_remove_local_vars(scp);
+        scp.abort = scope::abort_continue;
+    }
+
     emit_opcode(opcode::OP_jump, scp.loc_cont);
 }
 
@@ -1282,7 +1260,7 @@ auto compiler::emit_expr_binary(expr_binary const& exp, scope& scp) -> void
                 break;
             default:
                 throw comp_error(exp.loc(), "unknown binary expression");
-        }       
+        }
     }
 }
 
@@ -1438,7 +1416,7 @@ auto compiler::emit_expr_call_function(expr_function const& exp, scope& scp, boo
                 default:
                     emit_opcode(opcode::OP_CallBuiltin, { exp.name->value, argcount });
                     break;
-            }        
+            }
         }
     }
 
@@ -1626,7 +1604,19 @@ auto compiler::emit_expr_parameters(expr_parameters const& exp, scope& scp) -> v
     {
         for (auto const& entry : exp.list)
         {
-            emit_opcode(opcode::OP_SafeCreateVariableFieldCached, std::format("{}", variable_initialize(*entry, scp)));
+            if (!variable_initialized(*entry, scp))
+            {
+                emit_opcode(opcode::OP_SafeCreateVariableFieldCached, std::format("{}", variable_initialize(*entry, scp)));
+            }
+            else
+            {
+                auto index = variable_access(*entry, scp);
+
+                if (index == 0)
+                    emit_opcode(opcode::OP_SafeSetVariableFieldCached0);
+                else
+                    emit_opcode(opcode::OP_SafeSetVariableFieldCached, std::format("{}", index));
+            }
         }
 
         emit_opcode(opcode::OP_checkclearparams);
@@ -1752,7 +1742,8 @@ auto compiler::emit_expr_array_ref(expr_array const& exp, scope& scp, bool set) 
                 auto index = variable_initialize(exp.obj->as<expr_identifier>(), scp);
                 emit_opcode(opcode::OP_EvalNewLocalArrayRefCached0, (ctx_->props() & props::hash) ? exp.obj->as<expr_identifier>().value : std::format("{}", index));
 
-                if (!set) throw comp_error(exp.loc(), "INTERNAL: VAR CREATED BUT NOT SET");
+                // trigger if nested array for lvalue 'var[1][2] = 3;' set is in outer array
+                //if (!set) throw comp_error(exp.loc(), "INTERNAL: VAR CREATED BUT NOT SET");
             }
             else
             {
@@ -2047,7 +2038,7 @@ auto compiler::emit_expr_vector(expr_vector const& exp, scope& scp) -> void
             emit_opcode(opcode::OP_GetVector, data);
             index_ += (algn - base);
             function_->instructions.back()->size += (algn - base);
-        }           
+        }
     }
     else
     {
@@ -2591,7 +2582,7 @@ auto compiler::process_stmt_switch(stmt_switch const& stm, scope& scp) -> void
         {
             auto ins = scopes_.insert({ entry->as<stmt_default>().body.get(), make_scope() });
             auto& scp_body = ins.first->second;
-    
+
             scp.copy(scp_body);
             process_stmt_list(*entry->as<stmt_default>().body, *scp_body);
             has_default = true;
@@ -2751,6 +2742,8 @@ auto compiler::variable_initialize(expr_identifier const& exp, scope& scp) -> u8
                 scp.create_count = i + 1;
                 return scp.vars[i].create;
             }
+
+            throw comp_error(exp.loc(), std::format("local variable '{}' already initialized", exp.value));
         }
     }
 

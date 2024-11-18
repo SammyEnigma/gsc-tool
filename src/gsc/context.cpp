@@ -57,7 +57,7 @@ auto context::engine_name() const -> std::string_view
     return "";
 }
 
-auto context::opcode_size(opcode op) const -> u32
+auto context::opcode_size(opcode op) const -> usize
 {
     switch (op)
     {
@@ -369,7 +369,7 @@ auto context::func2_id(std::string const& name) const -> u64
 
     char const* str = name.data();
     u64 hash = 0x79D6530B0BB9B5D1;
-    
+
     while ( *str )
     {
         u8 byte = *str++;
@@ -477,7 +477,7 @@ auto context::meth2_id(std::string const& name) const -> u64
 
     char const* str = name.data();
     u64 hash = 0x79D6530B0BB9B5D1;
-    
+
     while ( *str )
     {
         u8 byte = *str++;
@@ -627,7 +627,7 @@ auto context::hash_id(std::string const& name) const -> u64
 
     char const* str = name.data();
     u64 hash = 0x79D6530B0BB9B5D1;
-    
+
     while ( *str )
     {
         u8 byte = *str++;

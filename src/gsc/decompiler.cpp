@@ -36,7 +36,7 @@ auto decompiler::decompile_function(function const& func) -> void
     locs_ = {};
     stack_ = {};
 
-    auto loc = location{ nullptr, static_cast<location::counter_type>(func.index) };
+    auto loc = location{ nullptr, static_cast<i32>(func.index) };
     auto name = expr_identifier::make(loc, func.name);
     auto prms = expr_parameters::make(loc);
     auto body = stmt_comp::make(loc, stmt_list::make(loc));
@@ -49,7 +49,8 @@ auto decompiler::decompile_function(function const& func) -> void
 
     if (!stack_.empty())
     {
-        throw decomp_error("stack isn't empty at function end");
+        std::cout << std::format("[WRN]: orphan stack data at function {}\n", func.name);
+        //throw decomp_error("stack isn't empty at function end");
     }
 
     locs_.last = true;
@@ -66,7 +67,7 @@ auto decompiler::decompile_instruction(instruction const& inst) -> void
 {
     decompile_expressions(inst);
 
-    auto loc = location{ nullptr, static_cast<location::counter_type>(inst.index) };
+    auto loc = location{ nullptr, static_cast<i32>(inst.index) };
 
     switch (inst.opcode)
     {
@@ -1252,12 +1253,19 @@ auto decompiler::decompile_instruction(instruction const& inst) -> void
         }
         case opcode::OP_SafeSetVariableFieldCached0:
         {
-            func_->params->list.push_back(expr_identifier::make(loc, "var_0"));
+            if (func_->params->list.size() == 0)
+                func_->params->list.push_back(expr_identifier::make(loc, "¡ERROR!"));
+            else
+                func_->params->list.push_back(expr_identifier::make(loc, func_->params->list.at(func_->params->list.size() - 1)->as<expr_identifier>().value));
             break;
         }
         case opcode::OP_SafeSetVariableFieldCached:
         {
-            func_->params->list.push_back(expr_identifier::make(loc, "var_" + inst.data[0]));
+            auto index = func_->params->list.size() - 1 - std::stoul(inst.data[0]);
+            if (index < 0 || index > func_->params->list.size())
+                func_->params->list.push_back(expr_identifier::make(loc, "¡ERROR!"));
+            else
+                func_->params->list.push_back(expr_identifier::make(loc, func_->params->list.at(index)->as<expr_identifier>().value));
             break;
         }
         case opcode::OP_EvalLocalVariableRefCached0:
@@ -1684,7 +1692,7 @@ auto decompiler::decompile_ifelses(stmt_list& stm) -> void
                             decompile_if(stm, i, j);
                         }
                     }
-                    else 
+                    else
                     {   // last if/else inside a loop still trigger this :(
                         decompile_if(stm, i, j);
                     }
@@ -1782,7 +1790,7 @@ auto decompiler::decompile_aborts(stmt_list& stm) -> void
             }
             else
             {
-                std::cout << std::format("WARNING: unresolved jump to '{}', maybe incomplete for loop\n", jmp);
+                std::cout << std::format("[WRN]: unresolved jump to '{}', maybe incomplete for loop at {}\n", jmp, func_->name->value);
             }
         }
     }
@@ -2190,7 +2198,7 @@ auto decompiler::decompile_foreach(stmt_list& stm, usize begin, usize end) -> vo
     stm.list.erase(stm.list.begin() + begin);
 
     auto index = (use_index) ? std::move(stm.list[begin]->as<stmt_expr>().value->as<expr_assign>().lvalue) : expr_empty::make(location{});
-    
+
     if (use_index)
     {
         stm.list.erase(stm.list.begin() + begin);
@@ -2248,59 +2256,44 @@ auto decompiler::decompile_foreach(stmt_list& stm, usize begin, usize end) -> vo
 auto decompiler::decompile_switch(stmt_list& stm, usize begin, usize end) -> void
 {
     auto const& data = stm.list[end]->as<stmt_jmp_endswitch>().data;
-    auto const count = std::stoul(data[0]);
+    auto count = std::stoul(data[0]);
+    auto index = 1u;
 
-    if (count)
+    for (auto i = 0u; i < count; i++)
     {
-        auto type = static_cast<switch_type>(std::stoul(data.back()));
-        auto index = 1u;
-
-        for (auto i = 0u; i < count; i++)
+        if (data[index] == "case")
         {
-            if (data[index] == "case")
-            {
-                if (ctx_->engine() == engine::iw9)
-                {
-                    type = static_cast<switch_type>(std::stoul(data[index + 1])); 
-                    auto j = find_location_index(stm, data[index + 3]);
-                    auto loc = stm.list[j]->loc();
-                    auto exp = (type == switch_type::integer) ? expr::ptr{ expr_integer::make(loc, data[index + 2]) } : expr::ptr{ expr_string::make(loc, data[index + 2]) };
-                    while (stm.list[j]->is<stmt_case>()) j++;
-                    stm.list.insert(stm.list.begin() + j, stmt_case::make(loc, std::move(exp), stmt_list::make(loc)));
-                    index += 4; 
-                }
-                else
-                {
-                    auto j = find_location_index(stm, data[index + 2]);
-                    auto loc = stm.list[j]->loc();
-                    auto exp = (type == switch_type::integer) ? expr::ptr{ expr_integer::make(loc, data[index + 1]) } : expr::ptr{ expr_string::make(loc, data[index + 1]) };
-                    while (stm.list[j]->is<stmt_case>()) j++;
-                    stm.list.insert(stm.list.begin() + j, stmt_case::make(loc, std::move(exp), stmt_list::make(loc)));
-                    index += 3;
-                }
-                
-            }
-            else if (data[index] == "default")
-            {
-                auto j = find_location_index(stm, data[index + 1]);
-                auto loc = stm.list[j]->loc();
-                while (stm.list[j]->is<stmt_case>()) j++;
-                stm.list.insert(stm.list.begin() + j, stmt_default::make(loc, stmt_list::make(loc)));
-                index += 2;
-            }
-            else
-            {
-                decomp_error("malformed endswitch statement");
-            }
+            auto type = static_cast<switch_type>(std::stoul(data[index + 1]));
+            auto pos = find_location_index(stm, data[index + 3]);
+            auto loc = stm.list[pos]->loc();
+            auto exp = (type == switch_type::integer) ? expr::ptr{ expr_integer::make(loc, data[index + 2]) } : expr::ptr{ expr_string::make(loc, data[index + 2]) };
+            while (stm.list[pos]->is<stmt_case>()) pos++;
+            stm.list.insert(stm.list.begin() + pos, stmt_case::make(loc, std::move(exp), stmt_list::make(loc)));
+            index += 4;
         }
-
-        end += count;
+        else if (data[index] == "default")
+        {
+            auto pos = find_location_index(stm, data[index + 1]);
+            auto loc = stm.list[pos]->loc();
+            while (stm.list[pos]->is<stmt_case>()) pos++;
+            stm.list.insert(stm.list.begin() + pos, stmt_default::make(loc, stmt_list::make(loc)));
+            index += 2;
+        }
+        else
+        {
+            decomp_error("malformed endswitch statement");
+        }
     }
+
+    end += count;
+
+    // check if last case is empty and shift location
+    auto last = find_location_index(stm, stm.list[begin]->as<stmt_jmp_switch>().value);
 
     auto save = locs_;
     locs_.last = false;
     locs_.brk = last_location_index(stm, end) ? locs_.end : stm.list[end + 1]->label();
-    locs_.end = stm.list[begin]->as<stmt_jmp_switch>().value;
+    locs_.end = (last == end) ? stm.list[begin]->as<stmt_jmp_switch>().value : std::format("loc_{:X}", stm.list[end]->as<stmt_jmp_endswitch>().loc().begin.line + 1);
 
     auto loc = stm.list[begin]->loc();
     auto test = std::move(stm.list[begin]->as<stmt_jmp_switch>().test);
@@ -2410,8 +2403,11 @@ auto decompiler::process_function(decl_function& func) -> void
 
     for (auto const& entry : func.params->list)
     {
-        scp_body->vars.push_back({ entry->value, static_cast<u8>(scp_body->create_count), true });
-        scp_body->create_count++;
+        if (scp_body->find(0, entry->value) == -1)
+        {
+            scp_body->vars.push_back({ entry->value, static_cast<u8>(scp_body->create_count), true });
+            scp_body->create_count++;
+        }
     }
 
     process_stmt_comp(*func.body, *scp_body);
@@ -2901,7 +2897,7 @@ auto decompiler::process_expr_assign(expr_assign::ptr& exp, scope& scp) -> void
 
     if (exp->oper != expr_assign::op::eq)
         return;
-    
+
     if (exp->rvalue->kind() != node::expr_binary)
         return;
 
@@ -3121,7 +3117,7 @@ auto decompiler::process_expr_var_access(expr::ptr& exp, scope& scp) -> void
 
     if (scp.vars.size() <= index)
     {
-        std::cout << std::format("WARNING: bad local var access\n");
+        std::cout << std::format("[WRN]: bad variable access {} at {} \n", index, func_->name->value);
     }
     else
     {

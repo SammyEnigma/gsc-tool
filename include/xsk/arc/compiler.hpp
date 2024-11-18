@@ -21,8 +21,8 @@ class compiler
     std::unordered_map<std::string, expr const*> constants_;
     std::string animtree_;
     sourcepos debug_pos_;
-    u32 index_;
-    u32 label_idx_;
+    usize index_;
+    usize label_idx_;
     bool can_break_;
     bool can_continue_;
     bool developer_thread_;
@@ -69,7 +69,6 @@ private:
     auto emit_expr_const(expr_const const& exp) -> void;
     auto emit_expr_assign(expr_assign const& exp) -> void;
     auto emit_expr_clear(expr const& exp) -> void;
-    auto emit_expr_clear_local(expr_identifier const& exp) -> void;
     auto emit_expr_increment(expr_increment const& exp, bool is_stmt) -> void;
     auto emit_expr_decrement(expr_decrement const& exp, bool is_stmt) -> void;
     auto emit_expr_ternary(expr_ternary const& exp) -> void;
